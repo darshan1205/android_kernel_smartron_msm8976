@@ -297,6 +297,14 @@ config LEDS_QPNP
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-qpnp.
 
+config LEDS_KTD202X
+	tristate "LED support for KTD202x I2C chip"
+	depends on LEDS_CLASS
+	depends on I2C
+	help
+	  This option enables support for LEDs connected to the KTD202x
+	  LED driver chip accessed via the I2C bus.
+
 config LEDS_QPNP_FLASH
 	tristate "Support for QPNP Flash LEDs"
 	depends on SPMI && OF_SPMI
