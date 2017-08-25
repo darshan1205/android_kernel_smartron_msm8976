@@ -402,7 +402,7 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_dcp_icl_ma = 1800;
+static int smbchg_default_dcp_icl_ma = 2500;
 module_param_named(
 	default_dcp_icl_ma, smbchg_default_dcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -4450,6 +4450,20 @@ static int smbchg_restricted_charging(struct smbchg_chip *chip, bool enable)
 
 	return rc;
 }
+int ft5x06_init = 0;
+struct  smbchg_chip *chip_for_tp;
+extern int ft5x06_ts_avoid_usb_noise (int usb_in);
+bool get_usb_present_for_tp(void){
+	//        printk ("xxxxxxxxxx get_usb_presenti_for_tp %d \n",chip_for_tp->usb_present);
+	if(chip_for_tp->usb_present){
+		printk("in usb_mode \n");
+		return 1;
+	}
+	else{
+		printk(" out usb_mode \n");
+		return 0;
+		}
+}
 
 static void handle_usb_removal(struct smbchg_chip *chip)
 {
@@ -4503,6 +4517,9 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	chip->usb_icl_delta = 0;
 	vote(chip->usb_icl_votable, SW_AICL_ICL_VOTER, false, 0);
 	restore_from_hvdcp_detection(chip);
+	pr_err("    usb_present=%d \n",chip->usb_present);
+	if (ft5x06_init)
+	ft5x06_ts_avoid_usb_noise (chip->usb_present);
 }
 
 static bool is_src_detect_high(struct smbchg_chip *chip)
@@ -4584,6 +4601,9 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 		rc = enable_irq_wake(chip->aicl_done_irq);
 		chip->enable_aicl_wake = true;
 	}
+	pr_err("    usb_present=%d \n",chip->usb_present);
+	if (ft5x06_init)
+	ft5x06_ts_avoid_usb_noise (chip->usb_present);
 }
 
 void update_usb_status(struct smbchg_chip *chip, bool usb_present, bool force)
@@ -5489,6 +5509,7 @@ static enum power_supply_property smbchg_battery_properties[] = {
 	POWER_SUPPLY_PROP_RERUN_AICL,
 	POWER_SUPPLY_PROP_RESTRICTED_CHARGING,
 	POWER_SUPPLY_PROP_ALLOW_HVDCP3,
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 };
 
 static int smbchg_battery_set_property(struct power_supply *psy,
@@ -5638,6 +5659,9 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_RESTRICTED_CHARGING:
 		val->intval = (int)chip->restricted_charging;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+        get_property_from_fg(chip, POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN, &val->intval);
+        break;
 	/* properties from fg */
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = get_prop_batt_capacity(chip);
@@ -7610,7 +7634,7 @@ static int smbchg_probe(struct spmi_device *spmi)
 		dev_err(&spmi->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
-
+	chip_for_tp=chip;
 	chip->fcc_votable = create_votable(&spmi->dev,
 			"SMBCHG: fcc",
 			VOTE_MIN, NUM_FCC_VOTER, 2000,
