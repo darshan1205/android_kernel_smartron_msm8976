@@ -367,6 +367,16 @@ struct wcd_mbhc_cb {
 };
 
 struct wcd_mbhc {
+
+	//add by chunhui.liu to avoid hook btn press during headset removal
+	struct delayed_work  handle_hook_btn_dwork;
+	//add by chunhui.liu to avoid hook btn press during headset removal
+
+	//below add by chunhui.liu to solve quick double click hook button only report one time
+	bool is_hook_btn_dwork_in_queue;
+	struct delayed_work  handle_hook_btn_dbl_click_dwork;
+	//above add by chunhui.liu to solve quick double click hook button only report one time
+	
 	/* Delayed work to report long button press */
 	struct delayed_work mbhc_btn_dwork;
 	int buttons_pressed;
@@ -381,6 +391,7 @@ struct wcd_mbhc {
 	bool is_btn_press;
 	u8 current_plug;
 	bool in_swch_irq_handler;
+	bool is_headset_inserted;
 	bool hphl_swh; /*track HPHL switch NC / NO */
 	bool gnd_swh; /*track GND switch NC / NO */
 	u8 micbias1_cap_mode; /* track ext cap setting */

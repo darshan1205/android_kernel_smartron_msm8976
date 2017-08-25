@@ -1443,7 +1443,7 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	bool micbias1 = false;
 	struct snd_soc_codec *codec = mbhc->codec;
 
-	dev_dbg(codec->dev, "%s: enter\n", __func__);
+	pr_debug("%s: enter\n", __func__);
 
 	WCD_MBHC_RSC_LOCK(mbhc);
 
@@ -1895,16 +1895,19 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 			 __func__);
 		goto done;
 	}
+
 	if (mbhc->current_plug != MBHC_PLUG_TYPE_HEADSET) {
 		pr_debug("%s: Plug isn't headset, ignore button press\n",
 				__func__);
 		goto done;
 	}
+
 	mask = wcd_mbhc_get_button_mask(mbhc);
 	mbhc->buttons_pressed |= mask;
 	mbhc->mbhc_cb->lock_sleep(mbhc, true);
+
 	if (schedule_delayed_work(&mbhc->mbhc_btn_dwork,
-				msecs_to_jiffies(400)) == 0) {
+				msecs_to_jiffies(400)) == 0) {          //default is 400ms ; 
 		WARN(1, "Button pressed twice without release event\n");
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
@@ -1912,6 +1915,82 @@ done:
 	pr_debug("%s: leave\n", __func__);
 	WCD_MBHC_RSC_UNLOCK(mbhc);
 	return IRQ_HANDLED;
+}
+
+static void handle_hook_btn(struct work_struct *work)
+{
+	struct wcd_mbhc *mbhc;
+	struct delayed_work *dwork;
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, handle_hook_btn_dwork);
+	
+	pr_debug("%s: starting handle_hook_btn\n",__func__);
+
+	if (mbhc->in_swch_irq_handler) {
+		pr_debug("%s: Switch irq kicked in, ignore hook btn press\n",
+			__func__);
+	}
+	else if (MBHC_PLUG_TYPE_NONE == mbhc->current_plug){
+		pr_debug("%s: headset is removed, ignore hook btn press\n",
+			__func__);
+	}
+	else {
+		pr_debug("%s: Reporting hook btn press\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				    &mbhc->button_jack,
+				     SND_JACK_BTN_0,
+				     SND_JACK_BTN_0);
+		pr_debug("%s: Reporting hook btn release\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				&mbhc->button_jack,
+				0, SND_JACK_BTN_0);
+	}
+
+	mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+
+	mbhc->is_hook_btn_dwork_in_queue = false;
+			
+	pr_debug("%s: ending handle_hook_btn\n",__func__);
+}
+
+static void handle_hook_btn_dbl_click(struct work_struct *work)
+{
+	struct wcd_mbhc *mbhc;
+	struct delayed_work *dwork;
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, handle_hook_btn_dbl_click_dwork);
+	
+	pr_debug("%s: starting handle_hook_btn_dbl_click\n",__func__);
+
+	if (mbhc->in_swch_irq_handler) {
+		pr_debug("%s: Switch irq kicked in, ignore hook btn dbl_click press\n",
+			__func__);
+	}
+	else if (MBHC_PLUG_TYPE_NONE == mbhc->current_plug){
+		pr_debug("%s: headset is removed, ignore hook btn dbl_click press\n",
+			__func__);
+	}
+	else {
+		pr_debug("%s: Reporting hook btn dbl_click press\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				    &mbhc->button_jack,
+				     SND_JACK_BTN_0,
+				     SND_JACK_BTN_0);
+		pr_debug("%s: Reporting hook btn dbl_click release\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				&mbhc->button_jack,
+				0, SND_JACK_BTN_0);
+	}
+
+	mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+			
+	pr_debug("%s: handle_hook_btn_dbl_click\n",__func__);
 }
 
 static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
@@ -1943,14 +2022,31 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 		goto exit;
 
 	}
+
+	
+	
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
-		if (ret == 0) {
+		if (ret == 0) {                            //true if @dwork was pending, %false otherwise.
 			pr_debug("%s: Reporting long button release event\n",
 				 __func__);
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack,
 					0, mbhc->buttons_pressed);
 		} else {
+			//delayed work to ignore hook button press during removal
+			if (SND_JACK_BTN_0 == mbhc->buttons_pressed)
+			{
+				pr_debug("---HOOK button is pressed ! Delayed for 325ms---\n");
+				if (false == mbhc->is_hook_btn_dwork_in_queue){
+					schedule_delayed_work(&mbhc->handle_hook_btn_dwork, msecs_to_jiffies(325));
+					mbhc->is_hook_btn_dwork_in_queue = true;
+					goto exit;
+				}else{
+					schedule_delayed_work(&mbhc->handle_hook_btn_dbl_click_dwork, msecs_to_jiffies(325));
+					goto exit;
+				}
+			}
+			//delayed work to ignore hook button press during removal
 			if (mbhc->in_swch_irq_handler) {
 				pr_debug("%s: Switch irq kicked in, ignore\n",
 					__func__);
@@ -2062,9 +2158,9 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_L_DET_EN, 1);
 
 	/* Insertion debounce set to 96ms */
-	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);
+	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);    //default is 6 for 96ms; 4 for 48ms; 3 for 32ms
 	/* Button Debounce set to 16ms */
-	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);
+	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);  //default is 2 for 16 ms;    3 for 32 ms
 
 	/* Enable micbias ramp */
 	if (mbhc->mbhc_cb->mbhc_micb_ramp_control)
@@ -2081,6 +2177,8 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	wcd_program_btn_threshold(mbhc, false);
 
 	INIT_WORK(&mbhc->correct_plug_swch, wcd_correct_swch_plug);
+	INIT_DELAYED_WORK(&mbhc->handle_hook_btn_dwork, handle_hook_btn);
+	INIT_DELAYED_WORK(&mbhc->handle_hook_btn_dbl_click_dwork, handle_hook_btn_dbl_click);
 
 	init_completion(&mbhc->btn_press_compl);
 
@@ -2338,6 +2436,8 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	mbhc->is_extn_cable = false;
 	mbhc->hph_type = WCD_MBHC_HPH_NONE;
 	mbhc->wcd_mbhc_regs = wcd_mbhc_regs;
+	mbhc->is_hook_btn_dwork_in_queue = false;
+
 
 	if (mbhc->intr_ids == NULL) {
 		pr_err("%s: Interrupt mapping not provided\n", __func__);
