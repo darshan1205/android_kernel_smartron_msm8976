@@ -1,0 +1,23 @@
+# Smartron configuration options
+
+config MACH_SMARTRON
+       bool "Smartron device"
+       depends on ARCH_MSM
+       help
+         Support for SMARTRON products
+
+config MACH_SMARTRON_MSM8976
+	bool "Smartron MSM8976"
+        select MACH_SMARTRON
+	depends on ARCH_MSM8916
+	help
+	  Support for MSM8976 Smartron Variants
+
+menu "Smartron board selection"
+
+config MACH_SMARTRON_RIMO02A
+	bool "rimosrt board"
+	select MACH_SMARTRON_MSM8952
+	help
+	  Support for srt.phone rimo02a
+endmenu
