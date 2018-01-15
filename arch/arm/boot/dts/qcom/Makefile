@@ -66,10 +66,8 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
 	msm8208-qhd-cdp.dtb \
 	msm8208-qhd-rcm.dtb
 ifeq ($(CONFIG_MACH_SMARTRON_MSM8952),y)
-dtb-$(CONFIG_MACH_SMARTRON_RIMO02A) += msm8956-qrd.dtb \
-        msm8956-v1.1-qrd.dtb \
-	msm8976-rimosrt.dtb \
-	msm8976-v1.1-rimosrt.dtb
+dtb-$(CONFIG_MACH_SMARTRON_RIMO02A) += 	msm8976-rimo02a.dtb \
+	msm8976-v1.1-rimo02a.dtb
 else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8916-rumi.dtb \
