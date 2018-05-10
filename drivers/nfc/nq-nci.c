@@ -155,6 +155,7 @@ static ssize_t nfc_read(struct file *filp, char __user *buf,
 	unsigned char *tmp = NULL;
 	int ret;
 	int irq_gpio_val = 0;
+	int retry = 4;
 
 	if (!nqx_dev) {
 		ret = -ENODEV;
@@ -164,16 +165,14 @@ static ssize_t nfc_read(struct file *filp, char __user *buf,
 	if (count > nqx_dev->kbuflen)
 		count = nqx_dev->kbuflen;
 
-	dev_dbg(&nqx_dev->client->dev, "%s : reading %zu bytes.\n",
-			__func__, count);
+	dev_dbg(&nqx_dev->client->dev, "%s : reading %zu bytes.\n",	__func__, count);
 
 	mutex_lock(&nqx_dev->read_mutex);
 
 	irq_gpio_val = gpio_get_value(nqx_dev->irq_gpio);
 	if (irq_gpio_val == 0) {
 		if (filp->f_flags & O_NONBLOCK) {
-			dev_err(&nqx_dev->client->dev,
-			":f_falg has O_NONBLOCK. EAGAIN\n");
+			dev_err(&nqx_dev->client->dev, ":f_falg has O_NONBLOCK. EAGAIN\n");
 			ret = -EAGAIN;
 			goto err;
 		}
@@ -199,34 +198,36 @@ static ssize_t nfc_read(struct file *filp, char __user *buf,
 
 	tmp = nqx_dev->kbuf;
 	if (!tmp) {
-		dev_err(&nqx_dev->client->dev,
-			"%s: device doesn't exist anymore\n", __func__);
+		dev_err(&nqx_dev->client->dev, "%s: device doesn't exist anymore\n", __func__);
 		ret = -ENODEV;
 		goto err;
 	}
 	memset(tmp, 0x00, count);
 
 	/* Read data */
-	ret = i2c_master_recv(nqx_dev->client, tmp, count);
+	do{
+		ret = i2c_master_recv(nqx_dev->client, tmp, count);
+		if(0 > ret)
+			dev_err(&nqx_dev->client->dev, "retry i2c_master_recv read data %d times failed !\n",5 - retry);
+	}while(ret < 0 && 0 < (retry--));
+
+	if(retry >= 0)
+		dev_dbg(&nqx_dev->client->dev, "nfc i2c_master_recv read data successfully !\n");
+
 	if (ret < 0) {
-		dev_err(&nqx_dev->client->dev,
-			"%s: i2c_master_recv returned %d\n", __func__, ret);
+		dev_err(&nqx_dev->client->dev, "%s: i2c_master_recv returned %d\n", __func__, ret);
 		goto err;
 	}
 	if (ret > count) {
-		dev_err(&nqx_dev->client->dev,
-			"%s: received too many bytes from i2c (%d)\n",
-			__func__, ret);
+		dev_err(&nqx_dev->client->dev, "%s: received too many bytes from i2c (%d)\n", __func__, ret);
 		ret = -EIO;
 		goto err;
 	}
 #ifdef NFC_KERNEL_BU
-		dev_dbg(&nqx_dev->client->dev, "%s : NfcNciRx %x %x %x\n",
-			__func__, tmp[0], tmp[1], tmp[2]);
+		dev_dbg(&nqx_dev->client->dev, "%s : NfcNciRx %x %x %x\n",	__func__, tmp[0], tmp[1], tmp[2]);
 #endif
 	if (copy_to_user(buf, tmp, ret)) {
-		dev_warn(&nqx_dev->client->dev,
-			"%s : failed to copy to user space\n", __func__);
+		dev_warn(&nqx_dev->client->dev,	"%s : failed to copy to user space\n", __func__);
 		ret = -EFAULT;
 		goto err;
 	}
@@ -245,6 +246,7 @@ static ssize_t nfc_write(struct file *filp, const char __user *buf,
 	struct nqx_dev *nqx_dev = filp->private_data;
 	char *tmp = NULL;
 	int ret = 0;
+	int retry = 4;
 
 	if (!nqx_dev) {
 		ret = -ENODEV;
@@ -264,8 +266,15 @@ static ssize_t nfc_write(struct file *filp, const char __user *buf,
 		ret = PTR_ERR(tmp);
 		goto out;
 	}
+	do{
+		ret = i2c_master_send(nqx_dev->client, tmp, count);
+		if(0 > ret)
+			dev_err(&nqx_dev->client->dev, "retry i2c_master_send write data %d times failed !\n",5 - retry);
+	}while(ret < 0 && 0 < (retry--));
 
-	ret = i2c_master_send(nqx_dev->client, tmp, count);
+	if(retry >= 0)
+		dev_dbg(&nqx_dev->client->dev, "nfc i2c_master_send write data successfully !\n");
+
 	if (ret != count) {
 		dev_err(&nqx_dev->client->dev,
 		"%s: failed to write %d\n", __func__, ret);
@@ -633,6 +642,7 @@ static const struct file_operations nfc_dev_fops = {
 static int nfcc_hw_check(struct i2c_client *client, struct nqx_dev *nqx_dev)
 {
 	int ret = 0;
+	int retry = 4;
 
 	unsigned char raw_nci_reset_cmd[] =  {0x20, 0x00, 0x01, 0x00};
 	unsigned char raw_nci_init_cmd[] =   {0x20, 0x01, 0x00};
@@ -646,26 +656,45 @@ static int nfcc_hw_check(struct i2c_client *client, struct nqx_dev *nqx_dev)
 	msleep(20);
 	gpio_set_value(enable_gpio, 1);/* HPD : Enable*/
 	/* hardware dependent delay */
-	msleep(20);
+	msleep(30);
 
 	/* send NCI CORE RESET CMD with Keep Config parameters */
-	ret = i2c_master_send(client, raw_nci_reset_cmd,
-						sizeof(raw_nci_reset_cmd));
+	do{
+		ret = i2c_master_send(client, raw_nci_reset_cmd,sizeof(raw_nci_reset_cmd));
+		if(0 > ret){
+			dev_err(&client->dev, "retry nfc core reset %d times failed !\n",5 - retry);
+			gpio_direction_output(enable_gpio, 0);
+			msleep(20);
+			gpio_direction_output(enable_gpio, 1);
+			msleep(30);
+		}
+	}while(ret < 0 && 0 < (retry--));
+
+	if(retry >= 0)
+		dev_err(&client->dev, "nfc core reset successfully !\n");
+
 	if (ret < 0) {
-		dev_err(&client->dev,
-		"%s: - i2c_master_send Error\n", __func__);
+		dev_err(&client->dev, "%s: - i2c_master_send Error\n", __func__);
 		goto err_nfcc_hw_check;
 	}
 	/* hardware dependent delay */
 	msleep(30);
 
+	retry = 4;
 	/* Read Response of RESET command */
-	ret = i2c_master_recv(client, nci_reset_rsp,
-		sizeof(nci_reset_rsp));
+	do{
+		ret = i2c_master_recv(client, nci_reset_rsp, sizeof(nci_reset_rsp));
+		if(0 > ret)
+			dev_err(&client->dev, "retry nfc reset read response %d times failed !\n",5 - retry);
+	}while(ret < 0 && 0 < (retry--));
+
+	if(retry >= 0)
+		dev_err(&client->dev, "nfc reset read response successfully !\n");
+
 	dev_err(&client->dev,
-	"%s: - nq - reset cmd answer : NfcNciRx %x %x %x\n",
-	__func__, nci_reset_rsp[0],
-	nci_reset_rsp[1], nci_reset_rsp[2]);
+		"%s: - nq - reset cmd answer : NfcNciRx %x %x %x\n",
+			__func__, nci_reset_rsp[0],
+			nci_reset_rsp[1], nci_reset_rsp[2]);
 	if (ret < 0) {
 		dev_err(&client->dev,
 		"%s: - i2c_master_recv Error\n", __func__);
