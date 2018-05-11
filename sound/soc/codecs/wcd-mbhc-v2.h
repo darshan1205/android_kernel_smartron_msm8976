@@ -367,6 +367,11 @@ struct wcd_mbhc_cb {
 };
 
 struct wcd_mbhc {
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+	struct delayed_work  handle_hook_btn_dwork;
+	bool is_hook_btn_dwork_in_queue;
+	struct delayed_work  handle_hook_btn_dbl_click_dwork;
+#endif
 	/* Delayed work to report long button press */
 	struct delayed_work mbhc_btn_dwork;
 	int buttons_pressed;
@@ -381,6 +386,9 @@ struct wcd_mbhc {
 	bool is_btn_press;
 	u8 current_plug;
 	bool in_swch_irq_handler;
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+	bool is_headset_inserted;
+#endif
 	bool hphl_swh; /*track HPHL switch NC / NO */
 	bool gnd_swh; /*track GND switch NC / NO */
 	u8 micbias1_cap_mode; /* track ext cap setting */

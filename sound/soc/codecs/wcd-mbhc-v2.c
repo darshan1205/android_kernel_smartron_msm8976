@@ -40,10 +40,16 @@
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5 | \
 				  SND_JACK_BTN_6 | SND_JACK_BTN_7)
-#define OCP_ATTEMPT 1
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+#define HS_DETECT_PLUG_TIME_MS (800)
+#define SPECIAL_HS_DETECT_TIME_MS (500)
+#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 1250
+#else
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
 #define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
 #define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+#endif
+#define OCP_ATTEMPT 1
 #define GND_MIC_SWAP_THRESHOLD 4
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
 #define HS_VREF_MIN_VAL 1400
@@ -861,6 +867,10 @@ exit:
 /* To determine if cross connection occured */
 static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 {
+
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+	return false;
+#else
 	u16 swap_res;
 	enum wcd_mbhc_plug_type plug_type = MBHC_PLUG_TYPE_NONE;
 	s16 reg1;
@@ -905,6 +915,7 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	pr_debug("%s: leave, plug type: %d\n", __func__,  plug_type);
 
 	return (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) ? true : false;
+#endif
 }
 
 static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
@@ -1497,6 +1508,10 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			mbhc->mbhc_cb->enable_mb_source(codec, true);
 		mbhc->btn_press_intr = false;
 		wcd_mbhc_detect_plug_type(mbhc);
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+		if (mbhc->mbhc_cb->enable_mb_source)
+			mbhc->mbhc_cb->enable_mb_source(codec, false);
+#endif
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
 		/* Disable external voltage source to micbias if present */
@@ -1917,6 +1932,84 @@ done:
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+static void handle_hook_btn(struct work_struct *work)
+{
+	struct wcd_mbhc *mbhc;
+	struct delayed_work *dwork;
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, handle_hook_btn_dwork);
+
+	pr_debug("%s: starting handle_hook_btn\n",__func__);
+
+	if (mbhc->in_swch_irq_handler) {
+		pr_debug("%s: Switch irq kicked in, ignore hook btn press\n",
+			__func__);
+	}
+	else if (MBHC_PLUG_TYPE_NONE == mbhc->current_plug){
+		pr_debug("%s: headset is removed, ignore hook btn press\n",
+			__func__);
+	}
+	else {
+		pr_debug("%s: Reporting hook btn press\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				    &mbhc->button_jack,
+				     SND_JACK_BTN_0,
+				     SND_JACK_BTN_0);
+		pr_debug("%s: Reporting hook btn release\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				&mbhc->button_jack,
+				0, SND_JACK_BTN_0);
+	}
+
+	mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+
+	mbhc->is_hook_btn_dwork_in_queue = false;
+
+	pr_debug("%s: ending handle_hook_btn\n",__func__);
+}
+
+static void handle_hook_btn_dbl_click(struct work_struct *work)
+{
+	struct wcd_mbhc *mbhc;
+	struct delayed_work *dwork;
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, handle_hook_btn_dbl_click_dwork);
+
+	pr_debug("%s: starting handle_hook_btn_dbl_click\n",__func__);
+
+	if (mbhc->in_swch_irq_handler) {
+		pr_debug("%s: Switch irq kicked in, ignore hook btn dbl_click press\n",
+			__func__);
+	}
+	else if (MBHC_PLUG_TYPE_NONE == mbhc->current_plug){
+		pr_debug("%s: headset is removed, ignore hook btn dbl_click press\n",
+			__func__);
+	}
+	else {
+		pr_debug("%s: Reporting hook btn dbl_click press\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				    &mbhc->button_jack,
+				     SND_JACK_BTN_0,
+				     SND_JACK_BTN_0);
+		pr_debug("%s: Reporting hook btn dbl_click release\n",
+			 __func__);
+		wcd_mbhc_jack_report(mbhc,
+				&mbhc->button_jack,
+				0, SND_JACK_BTN_0);
+	}
+
+	mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+
+	pr_debug("%s: handle_hook_btn_dbl_click\n",__func__);
+}
+#endif
+
 static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 {
 	struct wcd_mbhc *mbhc = data;
@@ -1954,6 +2047,20 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack,
 					0, mbhc->buttons_pressed);
 		} else {
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+			if (SND_JACK_BTN_0 == mbhc->buttons_pressed)
+			{
+				pr_debug("---HOOK button is pressed ! Delayed for 325ms---\n");
+				if (false == mbhc->is_hook_btn_dwork_in_queue){
+					schedule_delayed_work(&mbhc->handle_hook_btn_dwork, msecs_to_jiffies(325));
+					mbhc->is_hook_btn_dwork_in_queue = true;
+					goto exit;
+				}else{
+					schedule_delayed_work(&mbhc->handle_hook_btn_dbl_click_dwork, msecs_to_jiffies(325));
+					goto exit;
+				}
+			}
+#endif
 			if (mbhc->in_swch_irq_handler) {
 				pr_debug("%s: Switch irq kicked in, ignore\n",
 					__func__);
@@ -2084,6 +2191,10 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	wcd_program_btn_threshold(mbhc, false);
 
 	INIT_WORK(&mbhc->correct_plug_swch, wcd_correct_swch_plug);
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+	INIT_DELAYED_WORK(&mbhc->handle_hook_btn_dwork, handle_hook_btn);
+	INIT_DELAYED_WORK(&mbhc->handle_hook_btn_dbl_click_dwork, handle_hook_btn_dbl_click);
+#endif
 
 	init_completion(&mbhc->btn_press_compl);
 
@@ -2341,6 +2452,9 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	mbhc->is_extn_cable = false;
 	mbhc->hph_type = WCD_MBHC_HPH_NONE;
 	mbhc->wcd_mbhc_regs = wcd_mbhc_regs;
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+	mbhc->is_hook_btn_dwork_in_queue = false;
+#endif
 
 	if (mbhc->intr_ids == NULL) {
 		pr_err("%s: Interrupt mapping not provided\n", __func__);
