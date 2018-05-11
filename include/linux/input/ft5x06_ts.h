@@ -22,7 +22,6 @@
 #define FT5X16_ID		0x0A
 #define FT5X36_ID		0x14
 #define FT6X06_ID		0x06
-#define FT6X36_ID       0x36
 
 struct fw_upgrade_info {
 	bool auto_cal;
@@ -34,20 +33,20 @@ struct fw_upgrade_info {
 	u16 delay_erase_flash;
 };
 
-struct ft5x06_psensor_platform_data {
-	struct input_dev *input_psensor_dev;
-	struct sensors_classdev ps_cdev;
-	int tp_psensor_opened;
-	char tp_psensor_data; /* 0 near, 1 far */
-	struct ft5x06_ts_data *data;
-};
+typedef struct _VkeyRect{
+        unsigned short x;
+        unsigned short y;
+        unsigned short dx;
+        unsigned short dy;
+}VkeyRect;
 
-struct ft5x06_gesture_platform_data {
-	int gesture_enable_to_set;	/* enable/disable gesture */
-	int in_pocket;	/* whether in pocket mode or not */
-	struct device *dev;
-	struct class *gesture_class;
-	struct ft5x06_ts_data *data;
+#define FT_KEY_PRESS       2
+#define FT_KEY_RELEASE     1
+struct tsp_key {
+        int key_code;
+        int key_status;
+	int update_status;
+        VkeyRect key_rect;
 };
 
 struct ft5x06_ts_platform_data {
@@ -76,11 +75,10 @@ struct ft5x06_ts_platform_data {
 	bool no_force_update;
 	bool i2c_pull_up;
 	bool ignore_id_check;
-	bool psensor_support;
-	bool gesture_support;
-	bool resume_in_workqueue;
 	int (*power_init) (bool);
 	int (*power_on) (bool);
+        struct tsp_key *tsp_key;
+        int tsp_key_num;
 };
 
 #endif
