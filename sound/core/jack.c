@@ -79,8 +79,16 @@ static int snd_jack_dev_register(struct snd_device *device)
 		if (!(jack->type & testbit))
 			continue;
 
+#ifdef CONFIG_MACH_SMARTRON_RIMO02A
+		if (!jack->key[i]){
+			if (1 != i){
+				jack->key[i] = BTN_0 + i;
+				}
+			}
+#else
 		if (!jack->key[i])
 			jack->key[i] = BTN_0 + i;
+#endif
 
 		input_set_capability(jack->input_dev, EV_KEY, jack->key[i]);
 	}
