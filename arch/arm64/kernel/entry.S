@@ -378,7 +378,7 @@ el0_sync:
 	cmp	x24, #ESR_EL1_EC_FP_EXC64	// FP/ASIMD exception
 	b.eq	el0_fpsimd_exc
 	cmp	x24, #ESR_EL1_EC_SYS64		// configurable trap
-	b.eq	el0_undef
+	b.eq	el0_sys
 	cmp	x24, #ESR_EL1_EC_SP_ALIGN	// stack alignment exception
 	b.eq	el0_sp_pc
 	cmp	x24, #ESR_EL1_EC_PC_ALIGN	// pc alignment exception
@@ -452,11 +452,13 @@ el0_ia:
 	 * Instruction abort handling
 	 */
 	mrs	x0, far_el1
-	// enable interrupts before calling the main handler
-	enable_dbg_and_irq
+	enable_dbg
+#ifdef CONFIG_TRACE_IRQFLAGS
+	bl	trace_hardirqs_off
+#endif
 	orr	x1, x25, #1 << 24		// use reserved ISS bit for instruction aborts
 	mov	x2, sp
-	b	do_mem_abort
+	b	do_el0_ia_bp_hardening
 el0_fpsimd_acc:
 	/*
 	 * Floating Point or Advanced SIMD access
@@ -491,6 +493,15 @@ el0_undef:
 	enable_dbg_and_irq
 	mov	x0, sp
 	b	do_undefinstr
+el0_sys:
+	/*
+	 * System instructions, for trapped cache maintenance instructions
+	 */
+	enable_dbg
+	enable_irq
+	mov	x0, x25
+	mov	x1, sp
+	b	do_sysinstr
 el0_dbg:
 	/*
 	 * Debug exception handling
