@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -270,7 +270,9 @@ void csrRoamJoinRetryTimerHandler(void *pv);
 #endif
 void limInitOperatingClasses( tHalHandle hHal );
 extern void SysProcessMmhMsg(tpAniSirGlobal pMac, tSirMsgQ* pMsg);
+#ifdef WLAN_BTAMP_FEATURE
 extern void btampEstablishLogLinkHdlr(void* pMsg);
+#endif
 static void csrSerDesUnpackDiassocRsp(tANI_U8 *pBuf, tSirSmeDisassocRsp *pRsp);
 void csrReinitPreauthCmd(tpAniSirGlobal pMac, tSmeCmd *pCommand);
 
@@ -2086,6 +2088,7 @@ eHalStatus csrChangeDefaultConfigParam(tpAniSirGlobal pMac, tCsrConfigParam *pPa
         pMac->roam.configParam.edca_bk_aifs = pParam->edca_bk_aifs;
         pMac->roam.configParam.edca_be_aifs = pParam->edca_be_aifs;
         pMac->sta_sap_scc_on_dfs_chan = pParam->sta_sap_scc_on_dfs_chan;
+        pMac->force_scc_with_ecsa = pParam->force_scc_with_ecsa;
         for (i = 0; i < 3; i++) {
              pMac->roam.configParam.agg_btc_sco_oui[i] =
                                                      pParam->agg_btc_sco_oui[i];
@@ -2293,6 +2296,8 @@ eHalStatus csrGetConfigParam(tpAniSirGlobal pMac, tCsrConfigParam *pParam)
         pParam->edca_bk_aifs = pMac->roam.configParam.edca_bk_aifs;
         pParam->edca_be_aifs = pMac->roam.configParam.edca_be_aifs;
         pParam->sta_sap_scc_on_dfs_chan = pMac->sta_sap_scc_on_dfs_chan;
+        pParam->force_scc_with_ecsa = pMac->force_scc_with_ecsa;
+
         for (i = 0; i < 3; i++) {
              pParam->agg_btc_sco_oui[i] =
                                       pMac->roam.configParam.agg_btc_sco_oui[i];
@@ -11039,7 +11044,9 @@ void csrRoamCheckForLinkStatusChange( tpAniSirGlobal pMac, tSirSmeRsp *pSirMsg )
             
         case eWNI_SME_BTAMP_LOG_LINK_IND:
             smsLog( pMac, LOG1, FL("Establish logical link req from HCI serialized through MC thread"));
+#ifdef WLAN_BTAMP_FEATURE
             btampEstablishLogLinkHdlr( pSirMsg );
+#endif
             break;
         case eWNI_SME_RSSI_IND:
             smsLog( pMac, LOG1, FL("RSSI indication from TL serialized through MC thread"));
